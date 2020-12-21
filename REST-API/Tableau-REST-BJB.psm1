@@ -801,6 +801,7 @@ function TS-UpdateUser
    catch{"Problem updating User: " + $UserAccount + " :- " + $_.Exception.Message }
 }
 
+
 ### DataSource Functions
 
 function TS-QueryDataSources
@@ -913,41 +914,130 @@ While ($done -eq 'FALSE')
 
 function TS-PublishDataSource
 {
+  param(
+  [string[]] $ProjectName = "",
+  [string[]] $DataSourceName = "",
+  [string[]] $DataSourceFile = "",
+  [string[]] $DataSourcePath = "",
+  [string[]] $UserAccount = "",
+  [string[]] $Password = "",
+  [validateset('True', 'False')][string[]] $Embed = "",
+  [validateset('True', 'False')][string[]] $OAuth = "", 
+  [validateset('True', 'False')][string[]] $OverWrite = "false",
+  [validateset('true', 'false')][string[]] $BackgroundTask = "false",
+  [validateset('true', 'false')][string[]] $Append = "false",
+  [validateset('true', 'false')][string[]] $Chunked = "True"
+  )
 
- param(
- [string[]] $ProjectName = "",
- [string[]] $DataSourceName = "",
- [string[]] $DataSourceFile = "",
- [string[]] $DataSourcePath = "",
- [string[]] $UserAccount = "",
- [string[]] $Password = "",
- [validateset('True', 'False')][string[]] $Embed = "",
- [validateset('True', 'False')][string[]] $OAuth = "", 
- [validateset('True', 'False')][string[]] $OverWrite = "False",
- [validateset('true', 'false')][string[]] $BackgroundTask = "false",
- [validateset('true', 'false')][string[]] $Append = "false",
- [validateset('true', 'false')][string[]] $Chunked = "false"
- 
- )
+  $project_ID = TS-GetProjectDetails -ProjectName $ProjectName
+  $connectionCredentials = ""
+  if ($UserAccount -ne '') {$connectionCredentials += ' name ="'+ $UserAccount +'"'}
+  if ($Password -ne '') {$connectionCredentials += ' password ="'+ $Password +'"'}
+  if ($Embed -ne '') {$connectionCredentials += ' embed ="'+ $Embed +'"'}
+  if ($OAuth -ne '') {$connectionCredentials += ' oAuth ="'+ $OAuth +'"'} 
+  if ($connectionCredentials -ne ''){$connectionCredentials = '<connectionCredentials'+ $connectionCredentials + ' />'}
 
- try
-  {
-   $project_ID = TS-GetProjectDetails -ProjectName $ProjectName
-   $DS_Content = Get-Content $DataSourcePath\$DataSourceFile -Raw
+  if ($Chunked -eq 'true') {
+    try {
+      $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/fileUploads -Headers $headers -Method POST
+      $uploadSessionId = $response.tsResponse.fileUpload.uploadSessionId
+    } catch {
+      throw "Unable to publish Data Source (Stage 1) " + $DataSourceName + " :- " + $_.Exception.Message
+    }
 
-   $connectionCredentials = ""
-   if ($UserAccount -ne '') {$connectionCredentials += ' name ="'+ $UserAccount +'"'}
-   if ($Password -ne '') {$connectionCredentials += ' password ="'+ $Password +'"'}
-   if ($embed -ne '') {$connectionCredentials += ' embed ="'+ $embed +'"'}
-   if ($OAuth -ne '') {$connectionCredentials += ' oAuth ="'+ $OAuth +'"'} 
-   if ($connectionCredentials -ne ''){$connectionCredentials = '<connectionCredentials'+ $connectionCredentials + ' />'}
+    $path = $DataSourcePath.trim() +"\"+ $DataSourceFile.trim()
+    $fileName = [System.IO.Path]::GetFileNameWithoutExtension($path)
+    $directory = [System.IO.Path]::GetDirectoryName($path)
+    $extension = [System.IO.Path]::GetExtension($path)
 
-   if ($Chunked -eq 'true') 
-    {TS-PublishDataSource_CHUNKED -DataSourceName $DataSourceName -ProjectID $project_ID -ConnectionCredentials $connectionCredentials -DataSourceFile $DataSourceFile -DataSourcePath $DataSourcePath -OverWrite $OverWrite -Append $Append}
-   else
-    {
+    $fileItem = Get-Item $path
+    $totalChunks = [int][Math]::Max(1,($fileItem.Length / $chunkSize))
+    $count = 0
+    $fn = [System.Net.WebUtility]::UrlEncode($fileName + $extension)
+    $fileStream = [System.IO.File]::OpenRead($path)
+    $chunk = New-Object byte[] $chunkSize
 
-$request_body = '
+    $startTime = Get-Date
+    while ( $bytesRead = $fileStream.Read($chunk, 0, $chunkSize) ) {
+      try {
+        $arrRead = $chunk[0..($bytesRead-1)]
+        $output=[System.Text.Encoding]::Default.GetString($arrRead)
+        $request_body = '
+--12f71d3d4ae441caa0b38a5d4e0bde5e
+Content-Disposition: name="request_payload"
+Content-Type: text/xml
+
+
+--12f71d3d4ae441caa0b38a5d4e0bde5e
+Content-Disposition: name="tableau_file"; filename="' + $fn + '"
+Content-Type: application/octet-stream
+
+' + $output + '
+--12f71d3d4ae441caa0b38a5d4e0bde5e--
+'
+        $wc = New-Object ExtendedWebClient
+        $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
+        $wc.Headers.Add('ContentLength', $request_body.Length)
+        $wc.Headers.Add('Content-Type', 'multipart/mixed; boundary=12f71d3d4ae441caa0b38a5d4e0bde5e')
+        $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/fileUploads/" +$uploadSessionId
+
+        $status = (($count/$totalChunks)*100)
+        $state = [int]$status
+        if ($totalChunks -gt 1) { Write-Progress -Activity "Publishing data source: $DataSourceName" -Status "Uploading $state% $estTimeText" -PercentComplete $status }
+
+        $response = $wc.UploadString($url ,'PUT', $request_body)
+        $endTime = Get-Date
+        $estTime = ((($endTime-$startTime).TotalSeconds*($totalChunks-($count+1))/($count+1) + $estTime)/2)
+        if ($count -ge $totalChunks/5) {
+          $estTimeMin = [Math]::Floor($estTime/60)
+          $estTimeSec = [Math]::Ceiling($estTime%60)
+          if ($estTimeMin -gt 0) { $estTimeText = ("${estTimeMin}m ${estTimeSec}s remaining").PadLeft(20) }
+          else { $estTimeText = ("$estTimeSec sec remaining").PadLeft(20) }
+          }
+      } catch {
+        throw "Unable to publish Data Source (Stage 2) " + $DataSourceName + " :- " + $_.Exception.Message
+      }
+      $count++
+    }
+    $fileStream.Close()
+
+    if ($totalChunks -gt 1) {
+      $state = 100
+      Write-Progress -Activity "Publishing data source: $DataSourceName" -Status "Uploading $state%" -PercentComplete $state
+      Start-Sleep -m 100
+      Write-Progress -Activity "Publishing data source: $DataSourceName" -Status "Uploaded $state%" -Completed
+      Start-Sleep -m 100
+    }
+    
+    try {
+      $enc_DataSourceName = [System.Net.WebUtility]::HtmlEncode($DataSourceName)
+      $request_body = '
+--6691a87289ac461bab2c945741f136e6
+Content-Disposition: name="request_payload"
+Content-Type: text/xml
+
+<tsRequest>
+    <datasource name="' + $enc_DataSourceName + '" >
+    ' + $connectionCredentials + '
+    <project id="' + $project_ID + '" />
+  </datasource>
+</tsRequest>
+--6691a87289ac461bab2c945741f136e6--
+'
+      $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/datasources?uploadSessionId="+ $uploadSessionId +"&datasourceType="+ $extension.trimstart('.') +"&overwrite="+ $overwrite +"&append="+ $Append +"&asJob="+$BackgroundTask
+      $wc = New-Object ExtendedWebClient
+      $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
+      $wc.Headers.Add('ContentLength', $request_body.Length)
+      $wc.Headers.Add('Content-Type', 'multipart/mixed; boundary=6691a87289ac461bab2c945741f136e6')
+      $response = $wc.UploadString($url ,'POST', $request_body)
+      "Data Source " + $DataSourceName + " was successfully published to " + $ProjectName + " Project."
+    } catch {
+      throw "Unable to publish Data Source (Stage 3) " + $DataSourceName + " :- " + $_.Exception.Message
+    }
+  } else { # publish non-chunked
+    try {
+      $DS_Content = Get-Content $DataSourcePath\$DataSourceFile -Raw
+      $request_body = '
 --6691a87289ac461bab2c945741f136e6
 Content-Disposition: name="request_payload"
 Content-Type: text/xml
@@ -955,7 +1045,7 @@ Content-Type: text/xml
 <tsRequest>
     <datasource name="' + $DataSourceName + '" >
     ' + $connectionCredentials + '
-        <project id="' + $project_ID + '" />
+    <project id="' + $project_ID + '" />
   </datasource>
 </tsRequest>
 --6691a87289ac461bab2c945741f136e6
@@ -965,260 +1055,71 @@ Content-Type:  application/octet-stream
 ' + $DS_Content + '
 --6691a87289ac461bab2c945741f136e6--
 '
-
-   $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/datasources?overwrite=" +$overwrite + "&append="+$Append + "&asJob=" + $BackgroundTask
- 
-   #$wc = New-Object System.Net.WebClient
-   $wc = New-Object ExtendedWebClient
-   $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
-   $wc.Headers.Add('ContentLength', $request_body.Length)
-   $wc.Headers.Add('Content-Type', 'multipart/mixed; boundary=6691a87289ac461bab2c945741f136e6')
-   $response = $wc.UploadString($url ,'POST', $request_body)
-   "Data Source " + $DataSourceName + " was successfully published to " + $ProjectName + " Project."
-  }
- }
- catch {"Unable to publish Data Source. " + $DataSourceName + " :- " + $_.Exception.Message}
-
-}
-
-function TS-PublishDataSource_CHUNKED
-{
-
- param(
- [string[]] $ProjectID = "",
- [string[]] $DataSourceName = "",
- [string[]] $ConnectionCredentials = "",
- [string[]] $DataSourceFile = "",
- [string[]] $DataSourcePath = "",
-
- [validateset('True', 'False')][string[]] $OverWrite = "False",
- [validateset('true', 'false')][string[]] $Append = "false"
- )
-
- try 
- {
-		$response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/fileUploads -Headers $headers -Method POST
-		$uploadSessionId = $response.tsResponse.fileUpload.uploadSessionId
-        $uploadSessionId	
-  } catch {
-		throw "Unable to publish Data Source (Stage 1). " + $DataSourceName + " :- " + $_.Exception.Message
-	}
-
-	$path = $DataSourcePath.trim() +"\"+ $DataSourceFile.trim()
-    $fileName = [System.IO.Path]::GetFileNameWithoutExtension($path)
-    $directory = [System.IO.Path]::GetDirectoryName($path)
-    $extension = [System.IO.Path]::GetExtension($path)
-
-	$file = Get-Content $path -Raw
-    $totalChunks = [int][Math]::Max(1,($file.Length / $chunkSize))
-    $hasMore = $TRUE
-	$count = 0
-	$fn = [System.Net.WebUtility]::UrlEncode($fileName + $extension)
-	
-	while($hasMore)
-    {
-		$pos = $count * $chunksize
-		if ($pos -ge ($file.Length - $chunkSize)) {
-			$hasMore = $FALSE
-			$output = $file.Substring($pos, $file.Length - $pos)
-		} else {
-			$output = $file.Substring($pos, $chunkSize)
-		}
-		
-		try {
-
-			$request_body = '
---12f71d3d4ae441caa0b38a5d4e0bde5e
-Content-Disposition: name="request_payload"
-Content-Type: text/xml
-
-
---12f71d3d4ae441caa0b38a5d4e0bde5e
-Content-Disposition: name="tableau_file"; filename="' + $fn + '"
-Content-Type: application/octet-stream
-
-' + $output + '
---12f71d3d4ae441caa0b38a5d4e0bde5e--
-'
-			$wc = New-Object ExtendedWebClient
-            # $wc = New-Object System.Net.WebClient
-			$wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
-			$wc.Headers.Add('ContentLength', $request_body.Length)
-			$wc.Headers.Add('Content-Type', 'multipart/mixed; boundary=12f71d3d4ae441caa0b38a5d4e0bde5e')
-			$url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/fileUploads/" +$uploadSessionId
-
-			$status = (($count/$totalChunks)*100)
-			$state = [int]$status
-			if ($totalChunks -gt 1) { Write-Progress -Activity "Publishing data source: $DataSourceName" -Status "Uploading $state% $EstTime" -PercentComplete $status }
-
-			$startTime = (Get-Date)
-			$response = $wc.UploadString($url ,'PUT', $request_body)
-			$endTime = (Get-Date)
-			$diffTime = [int]((($endTime-$startTime).Seconds*($totalChunks-($count+1)) + $diffTime)/2)
-			if ($count -ge $totalChunks/4) { $EstTime = ("$diffTime sec remaining").PadLeft(20) }
-
-			} catch {
-			throw "Unable to publish Data Source (Stage 2). " + $DataSourceName + " :- " + $_.Exception.Message
-		}
-		
-		$count++
+      $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/datasources?overwrite=" +$overwrite + "&append="+$Append +"&asJob="+$BackgroundTask
+    
+      $wc = New-Object ExtendedWebClient
+      $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
+      $wc.Headers.Add('ContentLength', $request_body.Length)
+      $wc.Headers.Add('Content-Type', 'multipart/mixed; boundary=6691a87289ac461bab2c945741f136e6')
+      $response = $wc.UploadString($url ,'POST', $request_body)
+      "Data Source " + $DataSourceName + " was successfully published to " + $ProjectName + " Project."
+    } catch {
+      throw "Unable to publish Data Source. " + $DataSourceName + " :- " + $_.Exception.Message
     }
-
-	if ($totalChunks -gt 1) {
-			$state = 100
-			Write-Progress -Activity "Publishing data source: $DataSourceName" -Status "Uploading $state%" -PercentComplete $state
-			Start-Sleep -m 100
-			Write-Progress -Activity "Publishing data source: $DataSourceName" -Status "Uploaded $state%" -Completed
-			Start-Sleep -m 100
-			}
-	
-	try {
-		$enc_DataSourceName = [System.Net.WebUtility]::HtmlEncode($DataSourceName)
-		$request_body = '
---6691a87289ac461bab2c945741f136e6
-Content-Disposition: name="request_payload"
-Content-Type: text/xml
-
-<tsRequest>
-    <datasource name="' + $enc_DataSourceName + '" >
-    ' + $connectionCredentials + '
-        <project id="' + $project_ID + '" />
-  </datasource>
-</tsRequest>
---6691a87289ac461bab2c945741f136e6--
-'
-
-		$url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/datasources?uploadSessionId="+ $uploadSessionId +"&datasourceType="+ $extension.trimstart('.') +"&overwrite="+ $overwrite +"&append="+ $Append 
-		$wc = New-Object ExtendedWebClient
-        # $wc = New-Object System.Net.WebClient
-		$wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
-		$wc.Headers.Add('ContentLength', $request_body.Length)
-		$wc.Headers.Add('Content-Type', 'multipart/mixed; boundary=6691a87289ac461bab2c945741f136e6')
-		$response = $wc.UploadString($url ,'POST', $request_body)
-		"Data Source " + $DataSourceName + " was successfully published."
-	} catch {
-		throw "Unable to publish Data Source (Stage 3). " + $DataSourceName + " :- " + $_.Exception.Message
-	}
+  }
 }
 
 
 function TS-PublishWorkbook
 {
- param(
- [string[]] $ProjectName = "",
- [string[]] $WorkbookName = "",
- [string[]] $WorkbookFile = "",
- [string[]] $WorkbookPath = "",
- [string[]] $UserAccount = "",
- [string[]] $Password = "",
- [validateset('True', 'False')][string[]] $Embed = "",
- [validateset('True', 'False')][string[]] $OAuth = "", 
- [validateset('True', 'False')][string[]] $OverWrite = "False",
- [validateset('True', 'False')][string[]] $ShowTabs = "False",
- [validateset('true', 'false')][string[]] $BackgroundTask = "false",
- [validateset('true', 'false')][string[]] $Chunked = "false",
- [string[]] $ViewsToHide = ""
+  param(
+  [string[]] $ProjectName = "",
+  [string[]] $WorkbookName = "",
+  [string[]] $WorkbookFile = "",
+  [string[]] $WorkbookPath = "",
+  [validateset('True', 'False')][string[]] $OverWrite = "false",
+  [validateset('True', 'False')][string[]] $ShowTabs = "false",
+  [validateset('true', 'false')][string[]] $BackgroundTask = "false",
+  [validateset('true', 'false')][string[]] $Chunked = "True",
+  [PSObject] $PublishViews
+  )
 
- )
- try
-  {
-    $project_ID = TS-GetProjectDetails -ProjectName $ProjectName
-    $WB_Content = Get-Content $WorkbookPath\$workbookfile -Raw
-    $Connection_Details = ""
-    $viewsbody = ""
-   if ($UserAccount -ne '') {$Connection_Details += '<connectionCredentials name ="'+ $UserAccount +'"'}
-   if ($Password -ne '') {$Connection_Details += ' password ="'+ $Password +'"'}
-   if ($Embed -ne '') {$Connection_Details += ' embed ="'+ $Embed +'"'}
-   if ($OAuth -ne '') {$Connection_Details += ' oAuth ="'+ $OAuth +'"'}
-   if ($UserAccount -ne '') {$Connection_Details += '/>'}
-   if ($ViewsToHide -ne '') {
-     $viewsbody = "<views>"
-     $ViewsArrary = $ViewsToHide.Split("|")
-     Foreach ($ViewToHide in $ViewsArrary)
-        {$viewsbody += '<view name="'+ $ViewToHide +'" hidden="true"/>'}
-        $viewsbody += '</views>'}
-        $viewsbody
-   if ($Chunked -eq 'true') 
-    {TS-PublishWorkbook_CHUNKED -ProjectID $project_ID -WorkbookName $WorkbookName -ConnectionCredentials $connectionCredentials -WorkbookFile $WorkbookFile -WorkbookPath $WorkbookPath -OverWrite $OverWrite -ShowTabs $ShowTabs -HiddenViews $viewsbody}
-   else
-    {
-
-$request_body = '
---6691a87289ac461bab2c945741f136e6
-Content-Disposition: name="request_payload"
-Content-Type: text/xml
-
-<tsRequest>
-   <workbook name="' + $WorkbookName + '" showTabs="'+ $ShowTabs +'">
-' + $Connection_Details +  $viewsbody + '
-     <project id="' + $project_ID + '" />
-  </workbook>
-</tsRequest>
---6691a87289ac461bab2c945741f136e6
-Content-Disposition: name="tableau_workbook";filename="' + $WorkbookFile + '"
-Content-Type: application/octet-stream
-
-' + $WB_Content + '
---6691a87289ac461bab2c945741f136e6--'
-
-    $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/workbooks?overwrite=" +$overwrite + "&asJob=" + $BackgroundTask
-
-    #$wc = New-Object System.Net.WebClient
-    $wc = New-Object ExtendedWebClient
-    $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
-    $wc.Headers.Add('ContentLength', $request_body.Length)
-
-    $wc.Headers.Add('Content-Type', 'multipart/mixed; boundary=6691a87289ac461bab2c945741f136e6')
-    $response = $wc.UploadString($url ,'POST', $request_body)
-    "Workbook published successfully."
+  $project_ID = TS-GetProjectDetails -ProjectName $ProjectName
+  $Views_Details = ""
+  if ($PublishViews) {
+     $Views_Details += "<views>"
+     $PublishViews | ForEach-Object {
+       $Views_Details += '<view name="'+$_.ViewName+'" hidden="'+$_.Hidden+'" />'
+     }
+     $Views_Details += "</views>"
   }
- }
- catch {"Unable to publish workbook. " + $WorkbookName + " :- " + $_.Exception.Message }
-}
 
-function TS-PublishWorkbook_CHUNKED
-{
- param(
- [string[]] $ProjectID = "",
- [string[]] $WorkbookName = "",
- [string[]] $WorkbookFile = "",
- [string[]] $WorkbookPath = "",
- [string[]] $ConnectionCredentials = "",
-  [string[]] $HiddenViews = "",
- [validateset('True', 'False')][string[]] $OverWrite = "False",
- [validateset('True', 'False')][string[]] $ShowTabs = "False"
- )
- try {
-		$response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/fileUploads -Headers $headers -Method POST
-		$uploadSessionId = $response.tsResponse.fileUpload.uploadSessionId
-	} catch {
-		throw "Unable to publish Workbook (Stage 1). " + $WorkbookName + " :- " + $_.Exception.Message
-	}
+  if ($Chunked -eq 'true') {
+    try {
+      $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/fileUploads -Headers $headers -Method POST
+      $uploadSessionId = $response.tsResponse.fileUpload.uploadSessionId
+    } catch {
+      throw "Unable to publish Workbook (Stage 1) " + $WorkbookName + " :- " + $_.Exception.Message
+    }
 
-	$path = $WorkbookPath.trim() +"\"+ $WorkbookFile.trim()
+    $path = $WorkbookPath.trim() +"\"+ $WorkbookFile.trim()
     $fileName = [System.IO.Path]::GetFileNameWithoutExtension($path)
     $directory = [System.IO.Path]::GetDirectoryName($path)
     $extension = [System.IO.Path]::GetExtension($path)
 
-	$file = Get-Content $path -Raw
-    $totalChunks = [int][Math]::Max(1,($file.Length / $chunkSize))
-    $hasMore = $TRUE
-	$count = 0
-	$fn = [System.Net.WebUtility]::UrlEncode($fileName + $extension)
-	
-	while($hasMore)
-    {
-		$pos = $count * $chunksize
-		if ($pos -ge ($file.Length - $chunkSize)) {
-			$hasMore = $FALSE
-			$output = $file.Substring($pos, $file.Length - $pos)
-		} else {
-			$output = $file.Substring($pos, $chunkSize)
-		}
-		
-		try {
+    $fileItem = Get-Item $path
+    $totalChunks = [int][Math]::Max(1,($fileItem.Length / $chunkSize))
+    $count = 0
+    $fn = [System.Net.WebUtility]::UrlEncode($fileName + $extension)
+    $fileStream = [System.IO.File]::OpenRead($path)
+    $chunk = New-Object byte[] $chunkSize
 
-			$request_body = '
+    $startTime = Get-Date
+    while ( $bytesRead = $fileStream.Read($chunk, 0, $chunkSize) ) {
+      try {
+        $arrRead = $chunk[0..($bytesRead-1)]
+        $output=[System.Text.Encoding]::Default.GetString($arrRead)
+        $request_body = '
 --12f71d3d4ae441caa0b38a5d4e0bde5e
 Content-Disposition: name="request_payload"
 Content-Type: text/xml
@@ -1231,117 +1132,77 @@ Content-Type: application/octet-stream
 ' + $output + '
 --12f71d3d4ae441caa0b38a5d4e0bde5e--
 '
-			$wc = New-Object ExtendedWebClient
-			$wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
-			$wc.Headers.Add('ContentLength', $request_body.Length)
-			$wc.Headers.Add('Content-Type', 'multipart/mixed; boundary=12f71d3d4ae441caa0b38a5d4e0bde5e')
-			$url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/fileUploads/" +$uploadSessionId
+        $wc = New-Object ExtendedWebClient
+        $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
+        $wc.Headers.Add('ContentLength', $request_body.Length)
+        $wc.Headers.Add('Content-Type', 'multipart/mixed; boundary=12f71d3d4ae441caa0b38a5d4e0bde5e')
+        $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/fileUploads/" +$uploadSessionId
 
-			$status = (($count/$totalChunks)*100)
-			$state = [int]$status
-			if ($totalChunks -gt 1) { Write-Progress -Activity "Publishing workbook: $WorkbookName" -Status "Uploading $state% $EstTime" -PercentComplete $status }
+        $status = (($count/$totalChunks)*100)
+        $state = [int]$status
+        if ($totalChunks -gt 1) { Write-Progress -Activity "Publishing workbook: $WorkbookName" -Status "Uploading $state% $estTimeText" -PercentComplete $status }
 
-			$startTime = (Get-Date)
-			$response = $wc.UploadString($url ,'PUT', $request_body)
-			$endTime = (Get-Date)
-			$diffTime = [int]((($endTime-$startTime).Seconds*($totalChunks-($count+1)) + $diffTime)/2)
-			if ($count -ge $totalChunks/4) { $EstTime = ("$diffTime sec remaining").PadLeft(20) }
-
-			} catch {
-			throw "Unable to publish Workbook (Stage 2). " + $WorkbookName + " :- " + $_.Exception.Message
-		}
-		
-		$count++
+        $response = $wc.UploadString($url ,'PUT', $request_body)
+        $endTime = Get-Date
+        $estTime = ((($endTime-$startTime).TotalSeconds*($totalChunks-($count+1))/($count+1) + $estTime)/2)
+        if ($count -ge $totalChunks/5) {
+          $estTimeMin = [Math]::Floor($estTime/60)
+          $estTimeSec = [Math]::Ceiling($estTime%60)
+          if ($estTimeMin -gt 0) { $estTimeText = ("${estTimeMin}m ${estTimeSec}s remaining").PadLeft(20) }
+          else { $estTimeText = ("$estTimeSec sec remaining").PadLeft(20) }
+        }
+      } catch {
+        throw "Unable to publish Workbook (Stage 2) " + $WorkbookName + " :- " + $_.Exception.Message
+      }
+      $count++
     }
+    $fileStream.Close()
 
-	if ($totalChunks -gt 1) {
-			$state = 100
-			Write-Progress -Activity "Publishing workbook: $WorkbookName" -Status "Uploading $state%" -PercentComplete $state
-			Start-Sleep -m 100
-			Write-Progress -Activity "Publishing workbook: $WorkbookName" -Status "Uploaded $state%" -Completed
-			Start-Sleep -m 100
-			}
-	
-	try {
-		$enc_WorkbookName = [System.Net.WebUtility]::HtmlEncode($WorkbookName)
-		$request_body = '
+    if ($totalChunks -gt 1) {
+        $state = 100
+        Write-Progress -Activity "Publishing workbook: $WorkbookName" -Status "Uploading $state%" -PercentComplete $state
+        Start-Sleep -m 100
+        Write-Progress -Activity "Publishing workbook: $WorkbookName" -Status "Uploaded $state%" -Completed
+        Start-Sleep -m 100
+        }
+    
+    try {
+      $enc_WorkbookName = [System.Net.WebUtility]::HtmlEncode($WorkbookName)
+      $request_body = '
 --6691a87289ac461bab2c945741f136e6
 Content-Disposition: name="request_payload"
 Content-Type: text/xml
 
 <tsRequest>
-   <workbook name="' + $enc_WorkbookName + '" showTabs="'+ $ShowTabs +'">
-' + $Connection_Details + $HiddenViews + '
-     <project id="' + $project_ID + '" />
+  <workbook name="' + $enc_WorkbookName + '" showTabs="'+ $ShowTabs +'">
+    <project id="' + $project_ID + '" />
+    ' + $Views_Details + '
   </workbook>
 </tsRequest>
 --6691a87289ac461bab2c945741f136e6--
 '
-		$url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/workbooks?uploadSessionId="+ $uploadSessionId +"&workbookType="+ $extension.trimstart('.') +"&overwrite="+ $overwrite
-		$wc = New-Object ExtendedWebClient
-		$wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
-		$wc.Headers.Add('ContentLength', $request_body.Length)
-		$wc.Headers.Add('Content-Type', 'multipart/mixed; boundary=6691a87289ac461bab2c945741f136e6')
-		$response = $wc.UploadString($url ,'POST', $request_body)
-		"Workbook " + $WorkbookName + " was successfully published."
-	} catch {
-		throw "Unable to publish Workbook (Stage 3). " + $WorkbookName + " :- " + $_.Exception.Message
-	}
-}
-
-
-function TS-PublishFlow
-{
-#### DOES NOT WORK
-
- param(
- [string[]] $ProjectName = "",
- [string[]] $FlowName = "",
- [string[]] $FlowFile = "",
- [string[]] $FlowPath = "",
- [string[]] $UserAccount = "",
- [string[]] $Password = "",
- [validateset('True', 'False')][string[]] $Embed = "",
- [validateset('True', 'False')][string[]] $OAuth = "", 
- [validateset('True', 'False')][string[]] $OverWrite = "False",
- [validateset('True', 'False')][string[]] $ShowTabs = "False",
- [validateset('true', 'false')][string[]] $BackgroundTask = "false",
- [validateset('true', 'false')][string[]] $Chunked = "false",
- [string[]] $ViewsToHide = ""
-
- )
- try
-  {
-    $project_ID = TS-GetProjectDetails -ProjectName $ProjectName
-    $WB_Content = Get-Content $WorkbookPath\$workbookfile -Raw
-    $Connection_Details = ""
-    $viewsbody = ""
-   if ($UserAccount -ne '') {$Connection_Details += '<connectionCredentials name ="'+ $UserAccount +'"'}
-   if ($Password -ne '') {$Connection_Details += ' password ="'+ $Password +'"'}
-   if ($Embed -ne '') {$Connection_Details += ' embed ="'+ $Embed +'"'}
-   if ($OAuth -ne '') {$Connection_Details += ' oAuth ="'+ $OAuth +'"'}
-   if ($UserAccount -ne '') {$Connection_Details += '/>'}
-   if ($ViewsToHide -ne '') {
-     $viewsbody = "<views>"
-     $ViewsArrary = $ViewsToHide.Split("|")
-     Foreach ($ViewToHide in $ViewsArrary)
-        {$viewsbody += '<view name="'+ $ViewToHide +'" hidden="true"/>'}
-        $viewsbody += '</views>'}
-        $viewsbody
-   if ($Chunked -eq 'true') 
-    {TS-PublishWorkbook_CHUNKED -ProjectID $project_ID -WorkbookName $WorkbookName -ConnectionCredentials $connectionCredentials -WorkbookFile $WorkbookFile -WorkbookPath $WorkbookPath -OverWrite $OverWrite -ShowTabs $ShowTabs -HiddenViews $viewsbody}
-   else
-    {
-
-$request_body = '
+      $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/workbooks?uploadSessionId="+ $uploadSessionId +"&workbookType="+ $extension.trimstart('.') +"&overwrite="+$overwrite +"&asJob="+$BackgroundTask
+      $wc = New-Object ExtendedWebClient
+      $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
+      $wc.Headers.Add('ContentLength', $request_body.Length)
+      $wc.Headers.Add('Content-Type', 'multipart/mixed; boundary=6691a87289ac461bab2c945741f136e6')
+      $response = $wc.UploadString($url ,'POST', $request_body)
+      "Workbook " + $WorkbookName + " was successfully published to " + $ProjectName + " Project."
+    } catch {
+      throw "Unable to publish Workbook (Stage 3) " + $WorkbookName + " :- " + $_.Exception.Message
+    }
+  } else { #publish non-chunked
+    try {
+      $WB_Content = Get-Content $WorkbookPath\$WorkbookFile -Raw
+      $request_body = '
 --6691a87289ac461bab2c945741f136e6
 Content-Disposition: name="request_payload"
 Content-Type: text/xml
 
 <tsRequest>
-   <workbook name="' + $WorkbookName + '" showTabs="'+ $ShowTabs +'">
-' + $Connection_Details +  $viewsbody + '
-     <project id="' + $project_ID + '" />
+  <workbook name="' + $WorkbookName + '" showTabs="'+ $ShowTabs +'">
+    <project id="' + $project_ID + '" />
+    ' + $Views_Details + '
   </workbook>
 </tsRequest>
 --6691a87289ac461bab2c945741f136e6
@@ -1350,136 +1211,122 @@ Content-Type: application/octet-stream
 
 ' + $WB_Content + '
 --6691a87289ac461bab2c945741f136e6--'
+      $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/workbooks?overwrite=" +$overwrite +"&asJob="+$BackgroundTask
 
-    $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/flows?overwrite=" + $overwrite
+      $wc = New-Object ExtendedWebClient
+      $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
+      $wc.Headers.Add('ContentLength', $request_body.Length)
 
-    #$wc = New-Object System.Net.WebClient
-    $wc = New-Object ExtendedWebClient
-    $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
-    $wc.Headers.Add('ContentLength', $request_body.Length)
-
-    $wc.Headers.Add('Content-Type', 'multipart/mixed; boundary=6691a87289ac461bab2c945741f136e6')
-    $response = $wc.UploadString($url ,'POST', $request_body)
-    "Workbook published successfully."
+      $wc.Headers.Add('Content-Type', 'multipart/mixed; boundary=6691a87289ac461bab2c945741f136e6')
+      $response = $wc.UploadString($url ,'POST', $request_body)
+      "Workbook " + $WorkbookName + " was successfully published to " + $ProjectName + " Project."
+    } catch {
+      throw "Unable to publish workbook " + $WorkbookName + " :- " + $_.Exception.Message
+    }
   }
- }
- catch {"Unable to publish workbook. " + $WorkbookName + " :- " + $_.Exception.Message }
 }
-
-
 
 
 
 function TS-DeleteDataSource
 {
- param(
- [string[]] $ProjectName = "",
- [string[]] $DataSourceName = "",
- [string[]] $DataSourceID = ""
- )
- try
- {
-   if ($DataSourceID -ne ''){$DataSourceID} else {$DataSourceID = TS-getDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
-   $DataSourceID
-   $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID -Headers $headers -Method DELETE 
-   "Data Source deleted: " + $DataSourceName
- }
- catch { "Unable to Delete Data Source: " + $DataSourceName + " :- " + $_.Exception.Message}
+  param(
+  [string[]] $ProjectName = "",
+  [string[]] $DataSourceName = "",
+  [string[]] $DataSourceID = ""
+  )
+  try {
+    if ($DataSourceID -ne ''){$DataSourceID} else {$DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
+    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID -Headers $headers -Method DELETE 
+    "Data Source deleted: " + $DataSourceName
+  }
+  catch { "Unable to Delete Data Source: " + $DataSourceName + " :- " + $_.Exception.Message}
 }
 
 
 function TS-UpdateDataSource
 {
- param(
- [string[]] $DataSourceName = "",
- [string[]] $ProjectName = "",
- [string[]] $NewProjectName = "",
- [string[]] $NewOwnerAccount = "",
- [string[]] $DataSourceID = ""
- 
- )
- try
- {
-       if ($DataSourceID -ne ''){ $DataSourceID} else { $DataSourceID = TS-getDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
-   $userID = TS-GetUserDetails -name $NewOwnerAccount
-   $ProjectID = TS-GetProjectDetails -ProjectName $NewProjectName
+  param(
+  [string[]] $DataSourceName = "",
+  [string[]] $ProjectName = "",
+  [string[]] $NewProjectName = "",
+  [string[]] $NewOwnerAccount = "",
+  [string[]] $DataSourceID = ""
+  )
+  try {
+    if ($DataSourceID -ne ''){ $DataSourceID} else { $DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
+    $userID = TS-GetUserDetails -name $NewOwnerAccount
+    $ProjectID = TS-GetProjectDetails -ProjectName $NewProjectName
 
-   $body = ""
-   if ($NewProjectName -ne '') {$body += '<project id ="'+ $ProjectID +'" />'}
-   if ($NewOwnerAccount -ne '') {$body += '<owner id ="'+ $userID +'"/>'}
+    $body = ""
+    if ($NewProjectName -ne '') {$body += '<project id ="'+ $ProjectID +'" />'}
+    if ($NewOwnerAccount -ne '') {$body += '<owner id ="'+ $userID +'"/>'}
 
-   $body = ('<tsRequest><datasource>' + $body +  ' </datasource></tsRequest>')
+    $body = ('<tsRequest><datasource>' + $body +  ' </datasource></tsRequest>')
 
-   $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID -Headers $headers -Method Put -Body $body
-   $response.tsResponse.datasource
- }
- catch { "Unable to Update Data Source: " + $DataSourceName + " :- " + $_.Exception.Message}
+    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID -Headers $headers -Method Put -Body $body
+    $response.tsResponse.datasource
+  }
+  catch { "Unable to Update Data Source: " + $DataSourceName + " :- " + $_.Exception.Message}
 }
 
 function TS-UpdateDataSourceConnection
 {
- param(
- [string[]] $DataSourceName = "",
- [string[]] $ProjectName = "",
- [string[]] $ServerName = "",
- [string[]] $Port = "",
- [string[]] $UserName = "",
- [string[]] $Password = "",
- [validateset('True', 'False')][string[]] $embed = "",
- [string[]] $DataSourceID = ""
- )
- try
- {
-      if ($DataSourceID -ne ''){ $DataSourceID} else { $DataSourceID = TS-getDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
-   $DataSourceID
-   $body = ""
-   if ($ServerName -ne '') {$body += 'serverAddress ="'+ $ServerName +'" '}
-   if ($Port -ne '') {$body += 'serverPort ="'+ $Port +'" '}
-   if ($UserName -ne '') {$body += 'userName ="'+ $UserName +'" '}
-   if ($Password -ne '') {$body += 'password ="'+ $Password +'" '}
-   if ($embed -ne '') {$body += 'embedPassword ="'+ $embed +'" '}
+  param(
+  [string[]] $DataSourceName = "",
+  [string[]] $ProjectName = "",
+  [string[]] $ServerName = "",
+  [string[]] $Port = "",
+  [string[]] $UserName = "",
+  [string[]] $Password = "",
+  [validateset('True', 'False')][string[]] $embed = "",
+  [string[]] $DataSourceID = ""
+  )
+  try {
+    if (!($DataSourceID)) { $DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
+    $body = ""
+    if ($ServerName -ne '') {$body += 'serverAddress ="'+ $ServerName +'" '}
+    if ($Port -ne '') {$body += 'serverPort ="'+ $Port +'" '}
+    if ($UserName -ne '') {$body += 'userName ="'+ $UserName +'" '}
+    if ($Password -ne '') {$body += 'password ="'+ $Password +'" '}
+    if ($embed -ne '') {$body += 'embedPassword ="'+ $embed +'" '}
    
-   $body = ('<tsRequest><connection ' + $body +  '/></tsRequest>')
-   $body
-   $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID/connection -Headers $headers -Method Put -Body $body
-   $response.tsResponse.connection
- }
- catch { "Unable to Update Data Source: " + $DataSourceName + " :- " + $_.Exception.Message}
+    $body = ('<tsRequest><connection ' + $body +  '/></tsRequest>')
+    $body
+    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID/connection -Headers $headers -Method Put -Body $body
+    #$response.tsResponse.connection
+  }
+  catch { "Unable to Update Data Source: " + $DataSourceName + " :- " + $_.Exception.Message}
 }
 
 function TS-UpdateWorkbookConnection
 {
- param(
- [string[]] $WorkbookName = "",
- [string[]] $ProjectName = "",
- [string[]] $ServerName = "",
- [string[]] $Port = "",
- [string[]] $UserName = "",
- [string[]] $Password = "",
- [validateset('True', 'False')][string[]] $embed = "",
- [string[]] $WorkbookID = "",
- [string[]] $ConnectionID = ""
-
-
- )
- try
- {
-   if ($WorkbookID -ne ''){ $WorkbookID} else { $WorkbookID = TS-getWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
-   $WorkbookID
-
-   $body = ""
-   if ($ServerName -ne '') {$body += 'serverAddress ="'+ $ServerName +'" '}
-   if ($Port -ne '') {$body += 'serverPort ="'+ $Port +'" '}
-   if ($UserName -ne '') {$body += 'userName ="'+ $UserName +'" '}
-   if ($Password -ne '') {$body += 'password ="'+ $Password +'" '}
-   if ($embed -ne '') {$body += 'embedPassword ="'+ $embed +'" '}
+  param(
+  [string[]] $WorkbookName = "",
+  [string[]] $ProjectName = "",
+  [string[]] $ServerName = "",
+  [string[]] $Port = "",
+  [string[]] $UserName = "",
+  [string[]] $Password = "",
+  [validateset('True', 'False')][string[]] $embed = "",
+  [string[]] $WorkbookID = "",
+  [string[]] $ConnectionID = ""
+  )
+  try {
+    if (!($WorkbookID)) { $WorkbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+    $body = ""
+    if ($ServerName -ne '') {$body += 'serverAddress ="'+ $ServerName +'" '}
+    if ($Port -ne '') {$body += 'serverPort ="'+ $Port +'" '}
+    if ($UserName -ne '') {$body += 'userName ="'+ $UserName +'" '}
+    if ($Password -ne '') {$body += 'password ="'+ $Password +'" '}
+    if ($embed -ne '') {$body += 'embedPassword ="'+ $embed +'" '}
    
-   $body = ('<tsRequest><connection ' + $body +  '/></tsRequest>')
-   $body
-   $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$WorkbookID/connections/$ConnectionID -Headers $headers -Method Put -Body $body
-   $response.tsResponse.connection
- }
- catch { "Unable to Update Workbook: " + $WorkbookName + " :- " + $_.Exception.Message}
+    $body = ('<tsRequest><connection ' + $body +  '/></tsRequest>')
+    $body
+    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$WorkbookID/connections/$ConnectionID -Headers $headers -Method Put -Body $body
+    #$response.tsResponse.connection
+  }
+  catch { "Unable to Update Workbook: " + $WorkbookName + " :- " + $_.Exception.Message}
 }
 
 
@@ -2985,118 +2832,108 @@ try
 
 function TS-DownloadWorkbook
 {
-param
- (
- [string[]] $WorkBookName ="",
- [string[]] $ProjectName ="",
- [string[]] $FileName ="",
- [validateset('True', 'False')][string[]] $IncludeExtract ="",
- [string[]] $WorkbookID = ""
+  param
+  (
+  [string[]] $WorkbookName ="",
+  [string[]] $ProjectName ="",
+  [string[]] $FileName ="",
+  [validateset('True', 'False')][string[]] $IncludeExtract ="",
+  [string[]] $WorkbookID = ""
+  )
+  try {
+    if (!($WorkbookID)) {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName} else {$WorkbookName = TS-GetWorkbookDetails -ID $workbookID}
+    $suffix = ""
+    if ($IncludeExtract -ne ''){$suffix = '?includeExtract='+$IncludeExtract}
 
- )
- try
-  {
-    if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
-   $suffix = ""
-   if ($IncludeExtract -ne ''){$suffix = '?includeExtract='+$IncludeExtract}
+    $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/workbooks/" + $WorkbookID + "/content" + $suffix
 
-   $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/workbooks/" + $WorkbookID + "/content" + $suffix
-
-   #$wc = New-Object System.Net.WebClient
-   $wc = New-Object ExtendedWebClient
-   $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
-   $wc.DownloadFile($url, $FileName)
-   "Workbook " + $WorkbookName + " download successfully to " + $FileName
-
+    #$wc = New-Object System.Net.WebClient
+    $wc = New-Object ExtendedWebClient
+    $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
+    $wc.DownloadFile($url, $FileName)
+    "Workbook " + $WorkbookName + " downloaded successfully to " + $FileName
   }
- catch{"Unable to download workbook. " + $WorkBookName + " :- " + $_.Exception.Message}
+  catch{"Unable to download workbook. " + $WorkbookName + " :- " + $_.Exception.Message}
 }
 
 function TS-DownloadWorkbookRevision
 {
-param
- (
- [string[]] $WorkBookName ="",
- [string[]] $ProjectName ="",
- [string[]] $FileName ="",
- [string[]] $RevisionNumber,
- [validateset('True', 'False')][string[]] $IncludeExtract ="",
- [string[]] $WorkbookID = ""
+  param
+  (
+  [string[]] $WorkBookName ="",
+  [string[]] $ProjectName ="",
+  [string[]] $FileName ="",
+  [string[]] $RevisionNumber,
+  [validateset('True', 'False')][string[]] $IncludeExtract ="",
+  [string[]] $WorkbookID = ""
+  )
+  try {
+    if (!($WorkbookID)) {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+    $suffix = ""
+    if ($IncludeExtract -ne ''){$suffix = '?includeExtract='+$IncludeExtract}
 
- )
- try
- {
-    if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
-   $suffix = ""
-   if ($IncludeExtract -ne ''){$suffix = '?includeExtract='+$IncludeExtract}
-
-   $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/workbooks/" + $WorkbookID + "/revisions/" + $RevisionNumber + "/content" + $suffix
-   #$wc = New-Object System.Net.WebClient
-   $wc = New-Object ExtendedWebClient
-   $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
-   $wc.DownloadFile($url, $FileName)
-   "Workbook " + $WorkbookName + " download successfully to " + $FileName
-
- }
- catch{"Unable to download workbook revision. " + $WorkBookName + " :- " + $_.Exception.Message}
+    $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/workbooks/" + $WorkbookID + "/revisions/" + $RevisionNumber + "/content" + $suffix
+    #$wc = New-Object System.Net.WebClient
+    $wc = New-Object ExtendedWebClient
+    $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
+    $wc.DownloadFile($url, $FileName)
+    "Workbook " + $WorkbookName + " downloaded successfully to " + $FileName
+  }
+  catch{"Unable to download workbook revision. " + $WorkBookName + " :- " + $_.Exception.Message}
 }
 
 
 
 function TS-DownloadDataSource
 {
-param
- (
- [string[]] $DatasourceName ="",
- [string[]] $ProjectName ="",
- [string[]] $FileName ="",
- [validateset('True', 'False')][string[]] $IncludeExtract ="",
- [string[]] $DataSourceID = ""
- )
- try
-  {
-       if ($DataSourceID -ne ''){ $DataSourceID} else { $DataSourceID = TS-getDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
-   $suffix = ""
-   if ($IncludeExtract -ne ''){$suffix = '?includeExtract='+$IncludeExtract}
-   $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/DataSources/" + $DataSourceID + "/content"+ $suffix
+  param
+  (
+  [string[]] $DatasourceName ="",
+  [string[]] $ProjectName ="",
+  [string[]] $FileName ="",
+  [validateset('True', 'False')][string[]] $IncludeExtract ="",
+  [string[]] $DataSourceID = ""
+  )
+  try {
+    if ($DataSourceID -ne ''){ $DataSourceID} else { $DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
+    $suffix = ""
+    if ($IncludeExtract -ne ''){$suffix = '?includeExtract='+$IncludeExtract}
+    $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/DataSources/" + $DataSourceID + "/content"+ $suffix
 
-   #$wc = New-Object System.Net.WebClient
-   $wc = New-Object ExtendedWebClient
-   $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
-   $wc.DownloadFile($url, $FileName)
-   "Data Source " + $DatasourceName + " download successfully to " + $FileName
+    #$wc = New-Object System.Net.WebClient
+    $wc = New-Object ExtendedWebClient
+    $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
+    $wc.DownloadFile($url, $FileName)
+    "Data Source " + $DatasourceName + " download successfully to " + $FileName
   }
- catch{"Unable to download datasource. " + $DatasourceName + " :- " + $_.Exception.Message }
+  catch {"Unable to download datasource. " + $DatasourceName + " :- " + $_.Exception.Message }
 }
 
 function TS-DownloadDataSourceRevision
 {
-param
- (
- [string[]] $DatasourceName ="",
- [string[]] $ProjectName ="",
- [string[]] $FileName ="",
- [string[]] $RevisionNumber,
- [validateset('True', 'False')][string[]] $IncludeExtract ="",
- [string[]] $DataSourceID = ""
- )
- try
-  {
-      if ($DataSourceID -ne ''){ $DataSourceID} else { $DataSourceID = TS-getDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
-   $suffix = ""
-   if ($IncludeExtract -ne ''){$suffix = '?includeExtract='+$IncludeExtract}
-   $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/DataSources/" + $DataSourceID + "/revisions/" + $RevisionNumber + "/content"+ $suffix
+  param
+  (
+  [string[]] $DatasourceName ="",
+  [string[]] $ProjectName ="",
+  [string[]] $FileName ="",
+  [string[]] $RevisionNumber,
+  [validateset('True', 'False')][string[]] $IncludeExtract ="",
+  [string[]] $DataSourceID = ""
+  )
+  try {
+    if ($DataSourceID -ne ''){ $DataSourceID} else { $DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
+    $suffix = ""
+    if ($IncludeExtract -ne ''){$suffix = '?includeExtract='+$IncludeExtract}
+    $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/DataSources/" + $DataSourceID + "/revisions/" + $RevisionNumber + "/content"+ $suffix
 
-   #$wc = New-Object System.Net.WebClient
-   $wc = New-Object ExtendedWebClient
-   $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
-   $wc.DownloadFile($url, $FileName)
-   "Data Source " + $DatasourceName + " download successfully to " + $FileName
+    #$wc = New-Object System.Net.WebClient
+    $wc = New-Object ExtendedWebClient
+    $wc.Headers.Add('X-Tableau-Auth',$headers.Values[0])
+    $wc.DownloadFile($url, $FileName)
+    "Data Source " + $DatasourceName + " download successfully to " + $FileName
   }
- catch{"Unable to download datasource revision. " + $DatasourceName + " :- " + $_.Exception.Message}
+  catch {"Unable to download datasource revision. " + $DatasourceName + " :- " + $_.Exception.Message}
 }
-
-
 
 
 
@@ -4766,6 +4603,7 @@ Function TS-GetFlowRunTask
     Export-ModuleMember -Function TS-QueryExtractRefreshTasksForSchedule
     Export-ModuleMember -Function TS-UpdateSchedule
     Export-ModuleMember -Function TS-CreateSchedule
+    Export-ModuleMember -Function TS-DeleteSchedule
     Export-ModuleMember -Function TS-RunExtractRefreshTask
     Export-ModuleMember -Function TS-GetExtractRefreshTasks
     Export-ModuleMember -Function TS-GetExtractRefreshTask
