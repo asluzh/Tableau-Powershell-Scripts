@@ -866,20 +866,17 @@ function TS-QueryDataSource
 
 function TS-QueryDataSourceConnections
 {
- param(
- [string[]] $DataSourceName = "",
- [string[]] $ProjectName = "",
- [string[]] $DataSourceID = ""
- )
- try
- {
-    if ($DataSourceID -ne ''){ $DataSourceID} else { $DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName }
-   $DataSourceID
-   $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID/connections -Headers $headers -Method GET 
-  $response.tsResponse.Connections.connection
- }
-catch { "Unable to Query Data Source Connections: " + $DataSourceName + " :- " + $_.Exception.Message}
-    
+  param(
+  [string[]] $DataSourceName = "",
+  [string[]] $ProjectName = "",
+  [string[]] $DataSourceID = ""
+  )
+  try {
+    if (!($DataSourceID)) { $DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName }
+    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID/connections -Headers $headers -Method GET 
+    $response.tsResponse.Connections.connection
+  }
+  catch { "Unable to Query Data Source Connections: " + $DataSourceName + " :- " + $_.Exception.Message}
 }
 
 function TS-GetDataSourceDetails
@@ -1292,9 +1289,7 @@ function TS-UpdateDataSourceConnection
     if ($embed -ne '') {$body += 'embedPassword ="'+ $embed +'" '}
    
     $body = ('<tsRequest><connection ' + $body +  '/></tsRequest>')
-    $body
     $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID/connection -Headers $headers -Method Put -Body $body
-    #$response.tsResponse.connection
   }
   catch { "Unable to Update Data Source: " + $DataSourceName + " :- " + $_.Exception.Message}
 }
@@ -1322,9 +1317,7 @@ function TS-UpdateWorkbookConnection
     if ($embed -ne '') {$body += 'embedPassword ="'+ $embed +'" '}
    
     $body = ('<tsRequest><connection ' + $body +  '/></tsRequest>')
-    $body
     $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$WorkbookID/connections/$ConnectionID -Headers $headers -Method Put -Body $body
-    #$response.tsResponse.connection
   }
   catch { "Unable to Update Workbook: " + $WorkbookName + " :- " + $_.Exception.Message}
 }
@@ -2841,7 +2834,7 @@ function TS-DownloadWorkbook
   [string[]] $WorkbookID = ""
   )
   try {
-    if (!($WorkbookID)) {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName} else {$WorkbookName = TS-GetWorkbookDetails -ID $workbookID}
+    if (!($WorkbookID)) {$WorkbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName} else {$WorkbookName = TS-GetWorkbookDetails -ID $workbookID}
     $suffix = ""
     if ($IncludeExtract -ne ''){$suffix = '?includeExtract='+$IncludeExtract}
 
@@ -2853,7 +2846,7 @@ function TS-DownloadWorkbook
     $wc.DownloadFile($url, $FileName)
     "Workbook " + $WorkbookName + " downloaded successfully to " + $FileName
   }
-  catch{"Unable to download workbook. " + $WorkbookName + " :- " + $_.Exception.Message}
+  catch {"Unable to download workbook. " + $WorkbookName + " :- " + $_.Exception.Message}
 }
 
 function TS-DownloadWorkbookRevision
@@ -2868,7 +2861,7 @@ function TS-DownloadWorkbookRevision
   [string[]] $WorkbookID = ""
   )
   try {
-    if (!($WorkbookID)) {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+    if (!($WorkbookID)) {$WorkbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
     $suffix = ""
     if ($IncludeExtract -ne ''){$suffix = '?includeExtract='+$IncludeExtract}
 
@@ -2879,7 +2872,7 @@ function TS-DownloadWorkbookRevision
     $wc.DownloadFile($url, $FileName)
     "Workbook " + $WorkbookName + " downloaded successfully to " + $FileName
   }
-  catch{"Unable to download workbook revision. " + $WorkBookName + " :- " + $_.Exception.Message}
+  catch {"Unable to download workbook revision. " + $WorkBookName + " :- " + $_.Exception.Message}
 }
 
 
@@ -2895,7 +2888,7 @@ function TS-DownloadDataSource
   [string[]] $DataSourceID = ""
   )
   try {
-    if ($DataSourceID -ne ''){ $DataSourceID} else { $DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
+    if (!($DataSourceID)) { $DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
     $suffix = ""
     if ($IncludeExtract -ne ''){$suffix = '?includeExtract='+$IncludeExtract}
     $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/DataSources/" + $DataSourceID + "/content"+ $suffix
@@ -2921,7 +2914,7 @@ function TS-DownloadDataSourceRevision
   [string[]] $DataSourceID = ""
   )
   try {
-    if ($DataSourceID -ne ''){ $DataSourceID} else { $DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
+    if (!($DataSourceID)) { $DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
     $suffix = ""
     if ($IncludeExtract -ne ''){$suffix = '?includeExtract='+$IncludeExtract}
     $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/DataSources/" + $DataSourceID + "/revisions/" + $RevisionNumber + "/content"+ $suffix
@@ -2977,27 +2970,26 @@ function TS-QueryViewsForSite
 
 function TS-QueryViewsForWorkbook
 {
-   param(
-   [string[]] $WorkbookName = "",
-   [string[]] $ProjectName = "",
-   [string[]] $WorkbookID = ""
-   )
- try
-  {
-    if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
-   $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$WorkbookID/views?includeUsageStatistics=true -Headers $headers -Method Get
+  param(
+  [string[]] $WorkbookName = "",
+  [string[]] $ProjectName = "",
+  [string[]] $WorkbookID = ""
+  )
+  try {
+    if (!($WorkbookID)) {$WorkbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$WorkbookID/views?includeUsageStatistics=true -Headers $headers -Method Get
 
-   ForEach ($detail in $response.tsResponse.Views.view)
+    ForEach ($detail in $response.tsResponse.Views.view)
     {
-     $viewURL = TS-GetViewURL -ContentURL $detail.contentURL
+      $viewURL = TS-GetViewURL -ContentURL $detail.contentURL
 
-     $Views = [pscustomobject]@{ViewName=$detail.name; ViewCount=$detail.usage.TotalViewCount; ContentURL=$detail.contentURL; ViewURL= $viewURL}
-     $views
+      $Views = [pscustomobject]@{ViewName=$detail.name; ViewCount=$detail.usage.TotalViewCount; ContentURL=$detail.contentURL; ViewURL= $viewURL}
+      $views
     }
   }
-  catch{"Unable to Query Views for Workbook: " + $WorkbookName + " :- " + $_.Exception.Message}
+  catch {"Unable to Query Views for Workbook: " + $WorkbookName + " :- " + $_.Exception.Message}
 }
- 
+
 function TS-GetViewURL
 {
   param
@@ -3099,7 +3091,7 @@ function TS-QueryWorkbooksForSite
 
       ForEach ($tag in $detail.tags.tag.label){$taglist += $tag + " "}
 
-      $Workbooks = [pscustomobject]@{WorkbookName=$detail.name; ShowTabs=$detail.ShowTabs; ContentURL=$detail.contentURL; Size=$detail.size; CreatedAt=$detail.CreatedAt; UpdatedAt=$detail.UpdatedAt; Project=$ProjectName; Owner=$Owner; Tags=$taglist;ID=$detail.ID}
+      $Workbooks = [pscustomobject]@{WorkbookName=$detail.name; ShowTabs=$detail.ShowTabs; ContentURL=$detail.contentURL; Size=$detail.size; CreatedAt=$detail.CreatedAt; UpdatedAt=$detail.UpdatedAt; Project=$ProjectName; Owner=$Owner; Tags=$taglist; EncryptExtracts=$detail.encryptExtracts; ID=$detail.ID}
       $workbooks
      }
    }
@@ -3169,58 +3161,54 @@ function TS-GetWorkbookProject
 
 function TS-QueryWorkbook
 {
- param(
- [string[]] $WorkbookName,
- [string[]] $ProjectName,
- [string[]] $WorkbookID = ""
- )
- try
-  {
-    if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
-   $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$workbookID -Headers $headers -Method Get
+  param(
+  [string[]] $WorkbookName,
+  [string[]] $ProjectName,
+  [string[]] $WorkbookID = ""
+  )
+  try {
+    if (!($WorkbookID)) {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$workbookID -Headers $headers -Method Get
   
-   ForEach ($detail in $response.tsResponse.workbook)
-     {
+    ForEach ($detail in $response.tsResponse.workbook)
+    {
       $taglist =''
       $ProjectName = TS-GetProjectDetails -ProjectID $detail.Project.ID
       $Owner = TS-GetUserDetails -ID $detail.Owner.ID
 
       ForEach ($tag in $detail.tags.tag.label){$taglist += $tag + " "}
-      $Workbook = [pscustomobject]@{WorkbookName = $WorkbookName;ShowTabs=$detail.ShowTabs; ContentURL=$detail.contentURL; Size=$detail.size; CreatedAt=$detail.CreatedAt; UpdatedAt=$detail.UpdatedAt; Project=$ProjectName; Owner=$Owner; Tags=$detail.tags.tag.label; Views = $detail.Views.View.Count; ViewList =$detail.Views.View.name}
-     }
-      $workbook
-
+      $Workbook = [pscustomobject]@{WorkbookName = $WorkbookName.Trim();ShowTabs=$detail.ShowTabs; ContentURL=$detail.contentURL; Size=$detail.size; CreatedAt=$detail.CreatedAt; UpdatedAt=$detail.UpdatedAt; Project=$ProjectName; Owner=$Owner; Tags=$detail.tags.tag.label; Views = $detail.Views.View.Count; ViewList =$detail.Views.View.name; ID = $WorkbookID}
+    }
+    $workbook
   }
-  catch{"Unable to Query Workbook: " + $WorkbookName + " :- " + $_.Exception.Message}
+  catch {"Unable to Query Workbook: " + $WorkbookName + " :- " + $_.Exception.Message}
 }
 
 function TS-QueryWorkbookConnections
 {
-param(
- [string[]] $WorkbookName,
- [string[]] $ProjectName,
- [string[]] $WorkbookID = ""
-)
+  param(
+  [string[]] $WorkbookName,
+  [string[]] $ProjectName,
+  [string[]] $WorkbookID = ""
+  )
 
-try
- {
-    if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
- $WorkbookID
- $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$workbookID/connections -Headers $headers -Method Get
+  try {
+    if (!($WorkbookID)) {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$workbookID/connections -Headers $headers -Method Get
 
-  ForEach ($detail in $response.tsResponse.Connections.connection)
-   {
-    $Connections = [pscustomobject]@{Id=$detail.id; Type=$detail.type; ServerAddress=$detail.serverAddress; ServerPort=$detail.serverPort;UserName=$detail.userName;DataSourceID=$detail.datasource.Id;DataSourceName=$detail.datasource.name}
-    $Connections`
-   }
- }
- catch {"Unable to Query Workbook connections." + " :- " + $_.Exception.Message}
+    ForEach ($detail in $response.tsResponse.Connections.connection)
+    {
+      $Connections = [pscustomobject]@{Id=$detail.id; Type=$detail.type; ServerAddress=$detail.serverAddress; ServerPort=$detail.serverPort;UserName=$detail.userName;DataSourceID=$detail.datasource.Id;DataSourceName=$detail.datasource.name}
+      $Connections`
+    }
+  }
+  catch {"Unable to Query Workbook connections." + " :- " + $_.Exception.Message}
 }
 
 
 function TS-UpdateWorkbook
 {
- param(
+  param(
   [string[]] $WorkbookName = "",
   [string[]] $ProjectName = "",
   [string[]] $NewProjectName = "",
@@ -3228,56 +3216,54 @@ function TS-UpdateWorkbook
   [validateset('True', 'False')][string[]] $ShowTabs = "",
   [string[]] $WorkbookID = ""
 
- )
- try
- {
-    if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
-  $WorkbookID
-  $userID = TS-GetUserDetails -name $NewOwnerAccount
-  $ProjectID = TS-GetProjectDetails -ProjectName $NewProjectName
+  )
+  try {
+    if (!($WorkbookID)) {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+    $userID = TS-GetUserDetails -name $NewOwnerAccount
+    $ProjectID = TS-GetProjectDetails -ProjectName $NewProjectName
 
-  $body = ""
-  $tabsbody = ""
+    $body = ""
+    $tabsbody = ""
 
-  if ($ShowTabs -ne '') {$tabsbody += ' showTabs ="'+ $ShowTabs +'"'}
-  if ($NewProjectName -ne '') {$body += '<project id ="'+ $ProjectID +'" />'}
-  if ($NewOwnerAccount -ne '') {$body += '<owner id ="'+ $userID +'"/>'}
+    if ($ShowTabs -ne '') {$tabsbody += ' showTabs ="'+ $ShowTabs +'"'}
+    if ($NewProjectName -ne '') {$body += '<project id ="'+ $ProjectID +'" />'}
+    if ($NewOwnerAccount -ne '') {$body += '<owner id ="'+ $userID +'"/>'}
 
-  $body = ('<tsRequest><workbook' +$tabsbody + '>' + $body +  ' </workbook></tsRequest>')
+    $body = ('<tsRequest><workbook' +$tabsbody + '>' + $body +  ' </workbook></tsRequest>')
 
-  $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$workbookID -Headers $headers -Method Put -Body $body
-  $response.tsResponse.Workbook
- }
- catch{"Problem updating Workbook: " + $WorkbookName + " :- " + $_.Exception.Message}
+    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$workbookID -Headers $headers -Method PUT -Body $body
+    $response.tsResponse.Workbook
+  }
+  catch {"Problem updating Workbook: " + $WorkbookName + " :- " + $_.Exception.Message}
 }
 
 function TS-UpdateWorkbookNow
 {
- param(
+  param(
   [string[]] $WorkbookName ="",
   [string[]] $ProjectName ="",
   [string[]] $WorkbookID = ""
   )
-   if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+  if (!($WorkbookID)) {$WorkbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
 
-     $body = "<tsRequest></tsRequest>"
-     $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$WorkbookID/refresh -Headers $headers -Method POST -Body $body -ContentType "text/xml"
-     $response.tsresponse.job
+  $body = "<tsRequest></tsRequest>"
+  $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$WorkbookID/refresh -Headers $headers -Method POST -Body $body -ContentType "text/xml"
+  $response.tsresponse.job
 }
 
 
 function TS-UpdateDataSourceNow
 {
- param(
+  param(
   [string[]] $DataSourceName ="",
   [string[]] $ProjectName ="",
   [string[]] $DataSourceID = ""
   )
-     if ($DataSourceID -ne ''){ $DataSourceID} else { $DataSourceID = TS-getDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
+  if (!($DataSourceID)) { $DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
 
-     $body = "<tsRequest></tsRequest>"
-     $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID/refresh -Headers $headers -Method POST -Body $body -ContentType "text/xml"
-     $response.tsresponse.job
+  $body = "<tsRequest></tsRequest>"
+  $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID/refresh -Headers $headers -Method POST -Body $body -ContentType "text/xml"
+  $response.tsresponse.job
 }
 
 
