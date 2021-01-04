@@ -3244,11 +3244,14 @@ function TS-UpdateWorkbookNow
   [string[]] $ProjectName ="",
   [string[]] $WorkbookID = ""
   )
-  if (!($WorkbookID)) {$WorkbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+  try {
+    if (!($WorkbookID)) {$WorkbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
 
-  $body = "<tsRequest></tsRequest>"
-  $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$WorkbookID/refresh -Headers $headers -Method POST -Body $body -ContentType "text/xml"
-  $response.tsresponse.job
+    $body = "<tsRequest></tsRequest>"
+    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$WorkbookID/refresh -Headers $headers -Method POST -Body $body -ContentType "text/xml"
+    $response.tsresponse.job
+  }
+  catch {"Problem refreshing workbook extracts: " + $WorkbookName + " :- " + $_.Exception.Message}
 }
 
 
@@ -3259,11 +3262,14 @@ function TS-UpdateDataSourceNow
   [string[]] $ProjectName ="",
   [string[]] $DataSourceID = ""
   )
-  if (!($DataSourceID)) { $DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
+  try {
+    if (!($DataSourceID)) { $DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
 
-  $body = "<tsRequest></tsRequest>"
-  $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID/refresh -Headers $headers -Method POST -Body $body -ContentType "text/xml"
-  $response.tsresponse.job
+    $body = "<tsRequest></tsRequest>"
+    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID/refresh -Headers $headers -Method POST -Body $body -ContentType "text/xml"
+    $response.tsresponse.job
+  }
+  catch {"Problem refreshing data source extracts: " + $DataSourceName + " :- " + $_.Exception.Message}
 }
 
 
@@ -3467,7 +3473,7 @@ function TS-AddWorkbookToFavorites
  )
  try
  {
-   if (!($WorkbookID)) {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+   if (!($WorkbookID)) {$WorkbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
   $userID = TS-GetUserDetails -name $UserAccount
 
    $body = '<tsRequest>
