@@ -3269,97 +3269,89 @@ function TS-UpdateDataSourceNow
 
 function TS-DeleteWorkbook
 {
- param(
- [string[]] $WorkbookName = "",
- [string[]] $ProjectName = "",
- [string[]] $WorkbookID = ""
- )
- try
-  {
-    if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+  param(
+  [string[]] $WorkbookName = "",
+  [string[]] $ProjectName = "",
+  [string[]] $WorkbookID = ""
+  )
+  try {
+    if (!($WorkbookID)) {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
 
    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$WorkbookID -Headers $headers -Method DELETE 
-   "Workbook Deleted"
+   $response.tsResponse
   }
-  catch{"Unable to Delete Workbook: " + $WorkbookName}
+  catch {"Unable to Delete Workbook: " + $WorkbookName}
 }
 
 function TS-AddTagsToWorkbook
 {
- param(
- [string[]] $WorkbookName = "",
- [string[]] $ProjectName = "",
- [string[]] $Tags = "",
- [string[]] $WorkbookID = ""
+  param(
+  [string[]] $WorkbookName = "",
+  [string[]] $ProjectName = "",
+  [string[]] $Tags = "",
+  [string[]] $WorkbookID = ""
+  )
+  try {
+    if (!($WorkbookID)) {$WorkbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
 
- )
- try
- {
-
-    if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
-  $workbookID
-
-  $body = ''
-  $TagsArrary = $Tags.Split(",")
-  Foreach ($Tag in $TagsArrary) {$body += '<tag label ="'+ $Tag +'" />'}
+    $body = ''
+    $TagsArrary = $Tags.Split(",")
+    Foreach ($Tag in $TagsArrary) {$body += '<tag label ="'+ $Tag +'" />'}
  
-  $body = ('<tsRequest><tags>'  + $body +  ' </tags></tsRequest>')
+    $body = ('<tsRequest><tags>'  + $body +  ' </tags></tsRequest>')
 
-  $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$workbookID/tags -Headers $headers -Method Put -Body $body
-  $response.tsResponse.tags.tag
- }
- catch {"Problem adding tags to Workbook:" + $WorkbookName}
+    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$workbookID/tags -Headers $headers -Method Put -Body $body
+    $response.tsResponse.tags.tag
+  }
+  catch {"Problem adding tags to Workbook:" + $WorkbookName}
 }
 
 function TS-AddTagsToView
 {
- param(
- [string[]] $ViewName = "",
- [string[]] $WorkbookName = "",
- [string[]] $ProjectName = "",
- [string[]] $Tags = "",
- [string[]] $WorkbookID = ""
- )
- try
- {
-
-  $ViewID = TS-GetViewDetails -WorkbookName $WorkbookName -ProjectName $ProjectName -ViewName $ViewName
+  param(
+  [string[]] $ViewName = "",
+  [string[]] $WorkbookName = "",
+  [string[]] $ProjectName = "",
+  [string[]] $Tags = "",
+  [string[]] $WorkbookID = ""
+  )
+  try {
+    $ViewID = TS-GetViewDetails -WorkbookName $WorkbookName -ProjectName $ProjectName -ViewName $ViewName
  
-  $body = ''
-  $TagsArrary = $Tags.Split(",")
-  Foreach ($Tag in $TagsArrary) {$body += '<tag label ="'+ $Tag +'" />'}
+    $body = ''
+    $TagsArrary = $Tags.Split(",")
+    Foreach ($Tag in $TagsArrary) {$body += '<tag label ="'+ $Tag +'" />'}
  
-  $body = ('<tsRequest><tags>'  + $body +  ' </tags></tsRequest>')
+    $body = ('<tsRequest><tags>'  + $body +  ' </tags></tsRequest>')
 
-  $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/views/$ViewID/tags -Headers $headers -Method Put -Body $body
-  $response.tsResponse.tags.tag
- }
- catch {"Problem adding tags to View:" + $ViewName}
+    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/views/$ViewID/tags -Headers $headers -Method Put -Body $body
+    $response.tsResponse.tags.tag
+  }
+  catch {"Problem adding tags to View:" + $ViewName}
 }
 
 function TS-AddTagsToDataSource
 {
- param(
- [string[]] $DataSourceName = "",
- [string[]] $ProjectName = "",
- [string[]] $Tags = "",
- [string[]] $DataSourceID = ""
- )
- try
- {
-     if ($DataSourceID -ne ''){ $DataSourceID} else { $DataSourceID = TS-getDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
-  $DataSourceID
+  param(
+  [string[]] $DataSourceName = "",
+  [string[]] $ProjectName = "",
+  [string[]] $Tags = "",
+  [string[]] $DataSourceID = ""
+  )
+  try {
+    if (!($DataSourceID)) { $DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
+    $DataSourceID
 
-  $body = ''
-  $TagsArrary = $Tags.Split(",")
-  Foreach ($Tag in $TagsArrary) {$body += '<tag label ="'+ $Tag +'" />'}
+    $body = ''
+    $TagsArrary = $Tags.Split(",")
+    Foreach ($Tag in $TagsArrary) {$body += '<tag label ="'+ $Tag +'" />'}
  
-  $body = ('<tsRequest><tags>'  + $body +  ' </tags></tsRequest>')
+    $body = ('<tsRequest><tags>'  + $body +  ' </tags></tsRequest>')
 
-  $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID/tags -Headers $headers -Method Put -Body $body
-  $response.tsResponse.tags.tag
- }
- catch {"Problem adding tags to DataSource:" + $DataSourceName + " :- " + $_.Exception.Message}
+    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID/tags -Headers $headers -Method Put -Body $body
+    $response.tsResponse.tags.tag
+  }
+  catch {"Problem adding tags to DataSource:" + $DataSourceName + " :- " + $_.Exception.Message}
 }
 
 
@@ -3373,7 +3365,7 @@ function TS-DeleteTagFromWorkbook
  )
  try
  {
-    if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+    if (!($WorkbookID)) {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
   $workbookID
   $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$workbookID/tags/$Tag -Headers $headers -Method Delete
  }
@@ -3390,7 +3382,7 @@ function TS-DeleteTagFromDataSource
  )
  try
  {
-    if ($DataSourceID -ne ''){ $DataSourceID} else { $DataSourceID = TS-getDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
+    if (!($DataSourceID)) { $DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
   $DataSourceID
   $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID/tags/$Tag -Headers $headers -Method Delete
  }
