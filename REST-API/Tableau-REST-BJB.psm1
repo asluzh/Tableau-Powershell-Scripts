@@ -3417,7 +3417,7 @@ function TS-GetViewDetails
  [string[]] $WorkbookID = ""
  )
 
- if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+ if (!($WorkbookID)) {$WorkbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
  
  $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$workbookID/Views -Headers $headers -Method Get
 
@@ -3467,7 +3467,7 @@ function TS-AddWorkbookToFavorites
  )
  try
  {
-   if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+   if (!($WorkbookID)) {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
   $userID = TS-GetUserDetails -name $UserAccount
 
    $body = '<tsRequest>
@@ -3521,7 +3521,7 @@ function TS-DeleteWorkbookFromFavorites
  try
   {
 
-    if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+    if (!($WorkbookID)) {$WorkbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
    $userID = TS-GetUserDetails -name $UserAccount
 
    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/favorites/$userID/workbooks/$WorkbookID -Headers $headers -Method Delete
@@ -3564,7 +3564,7 @@ function TS-AddDataSourceToFavorites
  )
  try
  {
-   if ($DataSourceID -ne '') {$DataSourceID} else {$DataSourceID = TS-GetDatasourceDetails -Name $DataSourceName -ProjectName $ProjectName}
+   if (!($DataSourceID)) {$DataSourceID = TS-GetDatasourceDetails -Name $DataSourceName -ProjectName $ProjectName}
    $userID = TS-GetUserDetails -name $UserAccount
 
    $body = '<tsRequest>
@@ -3592,7 +3592,7 @@ function TS-DeleteDataSourceFromFavorites
  try
   {
 
-   if ($DataSourceID -ne '') {$DataSourceID} else {$DataSourceID = TS-GetDatasourceDetails -Name $DataSourceName -ProjectName $ProjectName}
+   if (!($DataSourceID)) {$DataSourceID = TS-GetDatasourceDetails -Name $DataSourceName -ProjectName $ProjectName}
    $userID = TS-GetUserDetails -name $UserAccount
 
    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/favorites/$userID/datasources/$DataSourceID -Headers $headers -Method Delete
@@ -3613,7 +3613,7 @@ function TS-AddProjectToFavorites
  )
  try
  {
-   if ($ProjectID -ne '') {$ProjectID} else {$ProjectID = TS-GetProjectDetails -ProjectName $ProjectName}
+   if (!($ProjectID)) {$ProjectID = TS-GetProjectDetails -ProjectName $ProjectName}
    $userID = TS-GetUserDetails -name $UserAccount
 
    $body = '<tsRequest>
@@ -3640,7 +3640,7 @@ function TS-DeleteProjectFromFavorites
  try
   {
 
-   if ($ProjectID -ne '') {$ProjectID} else {$ProjectID = TS-GetProjectDetails -ProjectName $ProjectName}
+   if (!($ProjectID)) {$ProjectID = TS-GetProjectDetails -ProjectName $ProjectName}
    $userID = TS-GetUserDetails -name $UserAccount
 
    $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/favorites/$userID/projects/$ProjectID -Headers $headers -Method Delete
@@ -3650,7 +3650,7 @@ function TS-DeleteProjectFromFavorites
   catch {"Unable to delete Project From Favorites." + " :- " + $_.Exception.Message}
 }
 
-Function TS-QueryWorkbookPreviewImage
+function TS-QueryWorkbookPreviewImage
 {
  param(
  [string[]] $WorkbookName = "",
@@ -3660,7 +3660,7 @@ Function TS-QueryWorkbookPreviewImage
  )
  try
   {
-   if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+   if (!($WorkbookID)) {$WorkbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
 
    $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/workbooks/" + $workbookID + "/previewImage"
    #$wc = New-Object System.Net.WebClient
@@ -3673,7 +3673,7 @@ Function TS-QueryWorkbookPreviewImage
   catch {"Unable to Query Workbook Preview Image." + " :- " + $_.Exception.Message}
 }
 
-Function TS-QueryViewPreviewImage
+function TS-QueryViewPreviewImage
 {
 param(
  [string[]] $ViewName = "",
@@ -3684,7 +3684,7 @@ param(
  )
  try
   {
-     if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+     if (!($WorkbookID)) {$WorkbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
   $viewID = TS-GetViewDetails -WorkbookName $WorkbookName -ProjectName $ProjectName -ViewName $ViewName
 
    $url = $protocol.trim() + "://" + $server +"/api/" + $api_ver+ "/sites/" + $siteID + "/workbooks/" + $workbookID + "/views/" + $viewID + "/previewImage"
@@ -3698,9 +3698,7 @@ param(
   catch {"Unable to Query View Preview Image." + " :- " + $_.Exception.Message}
 }
 
-
-
-Function TS-QueryViewDownload
+function TS-QueryViewDownload
 {
  param(
  [string[]] $ViewName = "",
@@ -3715,7 +3713,7 @@ Function TS-QueryViewDownload
  )
  try
   {
-    if ($ViewID -ne '') {$ViewID} else {$viewID = TS-GetViewDetails -WorkbookName $WorkbookName -ProjectName $ProjectName -ViewName $ViewName}
+    if (!($ViewID)) {$viewID = TS-GetViewDetails -WorkbookName $WorkbookName -ProjectName $ProjectName -ViewName $ViewName}
    $suffix = $Type
    $join = "?"
    If ($Type -eq "image" -and $ImageQuality -eq "High")
@@ -3750,8 +3748,6 @@ Function TS-QueryViewDownload
   catch {"Unable to download View as " + $Type + " :- " + $_.Exception.Message }
 }
 
-
-
 function TS-GetDataSourceRevisions
 {
  param(
@@ -3761,7 +3757,7 @@ function TS-GetDataSourceRevisions
  )
  try
  {
-     if ($DataSourceID -ne ''){ $DataSourceID} else { $DataSourceID = TS-getDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
+     if (!($DataSourceID)) {$DataSourceID = TS-GetDataSourceDetails -Name $DataSourceName -ProjectName $ProjectName}
   
   $PageSize = 100
   $PageNumber = 1
@@ -3797,7 +3793,7 @@ function TS-GetWorkbookRevisions
  )
  try
  {
-   if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+   if (!($WorkbookID)) {$WorkbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
 
   
   $PageSize = 100
@@ -3835,7 +3831,7 @@ function TS-RemoveWorkbookRevision
  )
  try
  {
-    if ($WorkbookID -ne '') {$WorkbookID} else {$workbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
+    if (!($WorkbookID)) {$WorkbookID = TS-GetWorkbookDetails -Name $WorkbookName -ProjectName $ProjectName}
     $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$workbookID/revisions/$RevisionNumber -Headers $headers -Method Delete
   "Removed Workbook Revision: " + $RevisionNumber
   }
