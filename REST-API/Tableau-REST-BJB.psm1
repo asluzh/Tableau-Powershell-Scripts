@@ -3251,9 +3251,8 @@ function TS-UpdateWorkbookNow
     $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/workbooks/$WorkbookID/refresh -Headers $headers -Method POST -Body $body -ContentType "text/xml"
     $response.tsresponse.job
   }
-  catch {"Problem refreshing workbook extracts: " + $WorkbookName + " :- " + $_.Exception.Message}
+  catch {"Problem refreshing workbook extract: " + $WorkbookName + " :- " + $_.Exception.Message}
 }
-
 
 function TS-UpdateDataSourceNow
 {
@@ -3269,9 +3268,8 @@ function TS-UpdateDataSourceNow
     $response = Invoke-RestMethod -Uri ${protocol}://$server/api/$api_ver/sites/$siteID/datasources/$DataSourceID/refresh -Headers $headers -Method POST -Body $body -ContentType "text/xml"
     $response.tsresponse.job
   }
-  catch {"Problem refreshing data source extracts: " + $DataSourceName + " :- " + $_.Exception.Message}
+  catch {"Problem refreshing data source extract: " + $DataSourceName + " :- " + $_.Exception.Message}
 }
-
 
 function TS-DeleteWorkbook
 {
@@ -4604,6 +4602,8 @@ Function TS-GetFlowRunTask
     Export-ModuleMember -Function TS-DeleteWorkbook
     Export-ModuleMember -Function TS-AddTagsToWorkbook
     Export-ModuleMember -Function TS-DeleteTagFromWorkbook
+    Export-ModuleMember -Function TS-AddTagsToView
+    Export-ModuleMember -Function TS-DeleteTagFromView
     Export-ModuleMember -Function TS-QueryWorkbookConnections
     Export-ModuleMember -Function TS-UpdateWorkbookConnection
     Export-ModuleMember -Function TS-UpdateWorkbookNow
@@ -4618,8 +4618,6 @@ Function TS-GetFlowRunTask
     Export-ModuleMember -Function TS-UpdateDataSourceConnection
     Export-ModuleMember -Function TS-AddTagsToDataSource
     Export-ModuleMember -Function TS-DeleteTagFromDataSource
-    Export-ModuleMember -Function TS-AddTagsToView
-    Export-ModuleMember -Function TS-DeleteTagFromView
     Export-ModuleMember -Function TS-UpdateDataSourceNow
 
 
